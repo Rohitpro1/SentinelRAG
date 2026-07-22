@@ -57,80 +57,69 @@ class QdrantVectorRepository(VectorRepository):
         self._collection = settings.qdrant_collection
         self._logger = logger or get_logger(__name__)
 
-    async def ensure_collection(self) -> None:
+    async def ensure_collection(self, vector_size: Optional[int] = None) -> None:
         """
-        Idempotent collection setup. NOT part of the VectorRepository
-        interface -- this is an infra-only lifecycle helper, called once
-        at application bootstrap (or in integration test setup), never on
-        the hot query/upsert path, and never called by domain code.
+        Idempotent collection setup. Ensures target collection exists for given vector_size.
         """
+        size = vector_size or self._settings.qdrant_vector_size
+        collection = f"{self._collection}_{size}"
         try:
-            exists = await self._client.collection_exists(self._collection)
+            exists = await self._client.collection_exists(collection)
             if not exists:
                 await self._client.create_collection(
-                    collection_name=self._collection,
+                    collection_name=collection,
                     vectors_config=qmodels.VectorParams(
-                        size=self._settings.qdrant_vector_size, distance=qmodels.Distance.COSINE
+                        size=size, distance=qmodels.Distance.COSINE
                     ),
                 )
         except Exception as exc:  # noqa: BLE001
             raise self._translate_exception(exc, operation="ensure_collection") from exc
 
+    def _get_collection_name(self, vector: list[float]) -> str:
+        size = len(vector) if vector else self._settings.qdrant_vector_size
+        return f"{self._collection}_{size}"
+
     async def upsert(self, chunks: list[Chunk], embeddings: list[list[float]]) -> None:
         if len(chunks) != len(embeddings):
-            # Caller error -- matches InMemoryVectorRepository's contract
-            # exactly (Unit 2.2 raises ValueError for the same condition;
-            # here it's surfaced as a non-transient RetrievalError so
-            # callers using either implementation get consistent typed-
-            # exception behavior at the VectorRepository interface level).
             raise RetrievalError(
                 "chunks and embeddings must be the same length",
                 transient=False,
                 context={"chunks": len(chunks), "embeddings": len(embeddings)},
             )
 
+        if not chunks:
+            return
+
+        vector_size = len(embeddings[0])
+        collection_name = self._get_collection_name(embeddings[0])
+        await self.ensure_collection(vector_size=vector_size)
+
         points = [
             qmodels.PointStruct(
                 id=_chunk_id_to_point_id(chunk.chunk_id),
                 vector=embedding,
-                payload=self._chunk_to_payload(chunk),
+                payload=self._chunk_to_payload(chunk, len(embedding)),
             )
             for chunk, embedding in zip(chunks, embeddings)
         ]
 
-        # TRADE-OFF (retry policy, instruction 3 + 5): this is the ONE
-        # write-path retry in the system that lives inside a repository
-        # rather than a Service layer. SearchService (Unit 2.6) already
-        # owns retry-on-transient-failure for reads; duplicating a retry
-        # loop here for search() would cause uncontrolled retry
-        # amplification (outer retries x inner retries). But upsert/delete
-        # have no equivalent higher-level service yet -- the Ingestion
-        # Pipeline that will own that responsibility doesn't exist until a
-        # later unit -- so a single bounded retry here is the least-bad
-        # option today. This should be REMOVED from this repository once
-        # an IngestionService exists and takes over write-path retry, to
-        # avoid the same duplication problem the read path already avoids.
         await self._execute_with_single_retry(
             operation="upsert",
-            fn=lambda: self._client.upsert(collection_name=self._collection, points=points),
-            extra_log_fields={"point_count": len(points)},
+            fn=lambda: self._client.upsert(collection_name=collection_name, points=points),
+            extra_log_fields={"point_count": len(points), "collection": collection_name},
         )
 
     async def search(
         self, query_embedding: list[float], top_k: int, document_filter: Optional[dict] = None
     ) -> list[RetrievedChunk]:
         qdrant_filter = self._build_filter(document_filter)
+        collection_name = self._get_collection_name(query_embedding)
+        await self.ensure_collection(vector_size=len(query_embedding))
 
-        # No internal retry here -- see class docstring / upsert's
-        # trade-off note. SearchService (Unit 2.6) already wraps this
-        # entire call with asyncio.wait_for + exponential backoff retry;
-        # retrying again inside this repository would multiply the actual
-        # number of attempts unpredictably (documented explicitly rather
-        # than silently duplicated).
         start = time.perf_counter()
         try:
             response = await self._client.query_points(
-                collection_name=self._collection,
+                collection_name=collection_name,
                 query=query_embedding,
                 limit=top_k,
                 query_filter=qdrant_filter,
@@ -141,7 +130,7 @@ class QdrantVectorRepository(VectorRepository):
         latency_ms = (time.perf_counter() - start) * 1000
 
         results = [self._point_to_retrieved_chunk(point) for point in response.points]
-        log_event(self._logger, "qdrant_search_succeeded", latency_ms=round(latency_ms, 3), results=len(results))
+        log_event(self._logger, "qdrant_search_succeeded", latency_ms=round(latency_ms, 3), results=len(results), collection=collection_name)
         return results
 
     async def delete(self, document_id: str) -> None:
@@ -207,7 +196,9 @@ class QdrantVectorRepository(VectorRepository):
         )
 
     @staticmethod
-    def _chunk_to_payload(chunk: Chunk) -> dict[str, Any]:
+    def _chunk_to_payload(chunk: Chunk, vector_dimension: int = 768) -> dict[str, Any]:
+        meta = dict(chunk.metadata or {})
+        meta["vector_dimension"] = vector_dimension
         return {
             "chunk_id": chunk.chunk_id,
             "document_id": chunk.document_id,
@@ -215,7 +206,7 @@ class QdrantVectorRepository(VectorRepository):
             "token_count": chunk.token_count,
             "source_reliability_score": chunk.source_reliability_score,
             "ocr_confidence": chunk.ocr_confidence,
-            "metadata": chunk.metadata,
+            "metadata": meta,
         }
 
     @staticmethod

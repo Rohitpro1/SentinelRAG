@@ -45,6 +45,7 @@ class InMemoryVectorRepository(VectorRepository):
         self, query_embedding: list[float], top_k: int, document_filter: Optional[dict] = None
     ) -> list[RetrievedChunk]:
         candidates = list(self._store.values())
+        candidates = [(c, e) for c, e in candidates if len(e) == len(query_embedding)]
         if document_filter and "document_id" in document_filter:
             candidates = [(c, e) for c, e in candidates if c.document_id == document_filter["document_id"]]
 

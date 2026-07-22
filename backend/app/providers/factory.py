@@ -15,6 +15,8 @@ from app.providers.gemini.gemini_llm import GeminiLLMProvider
 
 import os
 from app.core.exceptions import SentinelRAGError
+from app.providers.voyage.voyage_embedding import VoyageEmbeddingProvider
+from app.providers.router.embedding_router import EmbeddingRouterProvider
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,17 @@ class AIProviderFactory:
         except Exception as exc:
             logger.warning("Gemini model validation encountered error (%s). Proceeding.", exc)
 
+    def _resolve_voyage_key_and_source(self) -> tuple[Optional[str], str]:
+        if self.settings.voyage_api_key and self.settings.voyage_api_key.strip():
+            return self.settings.voyage_api_key.strip(), "AISettings"
+        
+        env_voyage = os.getenv("VOYAGE_API_KEY") or os.getenv("AI_VOYAGE_API_KEY")
+        if env_voyage and env_voyage.strip():
+            source = "VOYAGE_API_KEY" if os.getenv("VOYAGE_API_KEY") else "AI_VOYAGE_API_KEY"
+            return env_voyage.strip(), f"env:{source}"
+        
+        return None, "missing"
+
     def create_embedding_provider(self) -> BaseEmbeddingProvider:
         provider_name = self.settings.provider.lower().strip()
         if provider_name == "gemini":
@@ -100,9 +113,31 @@ class AIProviderFactory:
                 )
             self._validate_gemini_model(key, self.settings.gemini_embedding_model, "embedContent")
             logger.info("Creating Gemini Embedding Provider (%s, key source: %s, key length: %d)", self.settings.gemini_embedding_model, source, len(key))
-            return GeminiEmbeddingProvider(
+            
+            gemini_provider = GeminiEmbeddingProvider(
                 api_key=key,
                 model=self.settings.gemini_embedding_model,
+            )
+
+            voyage_key, voyage_source = self._resolve_voyage_key_and_source()
+            if self.settings.embedding_failover_enabled and voyage_key:
+                logger.info("Enabling Embedding Failover: Primary=Gemini, Secondary=Voyage (%s, key source: %s)", self.settings.voyage_embedding_model, voyage_source)
+                voyage_provider = VoyageEmbeddingProvider(
+                    api_key=voyage_key,
+                    model=self.settings.voyage_embedding_model,
+                )
+                return EmbeddingRouterProvider(
+                    primary=gemini_provider,
+                    secondary=voyage_provider,
+                    primary_name="gemini",
+                    secondary_name="voyage",
+                )
+            
+            return EmbeddingRouterProvider(
+                primary=gemini_provider,
+                secondary=None,
+                primary_name="gemini",
+                secondary_name="voyage",
             )
         return DeterministicEmbeddingProvider()
 

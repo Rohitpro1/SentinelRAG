@@ -139,6 +139,11 @@ def test_openapi_security_schema_contains_http_bearer():
     assert "HTTPBearer" in schema["components"]["securitySchemes"]
     assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
 
+    # Verify that Authorization is not rendered as an inline parameter box under parameters
+    query_params = schema["paths"]["/api/v1/query"]["post"].get("parameters", [])
+    param_names = [p["name"] for p in query_params if "name" in p]
+    assert "Authorization" not in param_names
+
 
 def test_query_empty_string_returns_400_not_422():
     """

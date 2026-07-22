@@ -69,6 +69,7 @@ from app.services.verification.verification_agent import VerificationAgent
 
 
 from typing import Optional
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 http_bearer_scheme = HTTPBearer(auto_error=False)
@@ -76,17 +77,21 @@ http_bearer_scheme = HTTPBearer(auto_error=False)
 
 # ----------------------------------------------------------------------
 # OpenAPI HTTPBearer security dependency
-# Accepts Swagger Bearer tokens as well as raw Authorization headers.
+# Uses HTTPBearer for Swagger Authorize button & cURL generation.
+# Reads request.headers directly for raw cURL header compatibility.
 # Rejects missing credentials with 401 Unauthorized.
 # ----------------------------------------------------------------------
 async def get_current_principal(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer_scheme),
-    raw_authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> str:
     if credentials and credentials.credentials:
         return f"Bearer {credentials.credentials}"
-    if raw_authorization and raw_authorization.strip():
-        return raw_authorization.strip()
+
+    raw_auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if raw_auth and raw_auth.strip():
+        return raw_auth.strip()
+
     raise HTTPException(status_code=401, detail="Missing Authorization header")
 
 

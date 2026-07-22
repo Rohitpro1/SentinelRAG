@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import random
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -48,6 +48,20 @@ class GeminiLLMProvider(BaseLLMProvider):
         self._fallback_generator = ResponseGenerator()
         self._fallback_nli = DeterministicNLIVerifier()
         self._endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        
+        # Request-Scoped Prompt Cache & Telemetry Metrics
+        self._cache: dict[str, str] = {}
+        self._metrics: dict[str, Any] = {
+            "llm_calls_per_query": 0,
+            "llm_tokens_per_query": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "average_llm_latency": 0.0,
+            "_total_latency": 0.0,
+        }
+
         logger.info(
             "GeminiLLMProvider initialized: resolved_model='%s' (raw='%s'), client='raw REST API (httpx.AsyncClient)', api_version='v1beta', endpoint='%s'",
             self.model,
@@ -55,7 +69,30 @@ class GeminiLLMProvider(BaseLLMProvider):
             self._endpoint,
         )
 
+    def get_metrics(self) -> dict[str, Any]:
+        res = dict(self._metrics)
+        res.pop("_total_latency", None)
+        return res
+
+    def reset_metrics(self) -> None:
+        self._cache.clear()
+        self._metrics["llm_calls_per_query"] = 0
+        self._metrics["llm_tokens_per_query"] = 0
+        self._metrics["prompt_tokens"] = 0
+        self._metrics["completion_tokens"] = 0
+        self._metrics["cache_hits"] = 0
+        self._metrics["cache_misses"] = 0
+        self._metrics["average_llm_latency"] = 0.0
+        self._metrics["_total_latency"] = 0.0
+
     async def _call_gemini(self, prompt: str) -> Optional[str]:
+        # Request-scoped prompt cache check
+        if prompt in self._cache:
+            self._metrics["cache_hits"] += 1
+            logger.info("Gemini LLM Prompt Cache HIT (0ms).")
+            return self._cache[prompt]
+
+        self._metrics["cache_misses"] += 1
         logger.info("Calling Gemini LLM API: model='%s', url='%s'", self.model, self._endpoint)
 
         payload = {
@@ -69,6 +106,7 @@ class GeminiLLMProvider(BaseLLMProvider):
             }
         }
 
+        start_time = asyncio.get_event_loop().time()
         for attempt in range(1, self.max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -89,7 +127,22 @@ class GeminiLLMProvider(BaseLLMProvider):
                     if candidates:
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts:
-                            return parts[0].get("text", "").strip()
+                            result_text = parts[0].get("text", "").strip()
+                            self._cache[prompt] = result_text
+                            
+                            # Update Telemetry Metrics
+                            elapsed = asyncio.get_event_loop().time() - start_time
+                            self._metrics["llm_calls_per_query"] += 1
+                            self._metrics["_total_latency"] += elapsed
+                            self._metrics["average_llm_latency"] = round(self._metrics["_total_latency"] / self._metrics["llm_calls_per_query"], 3)
+                            
+                            p_tokens = len(prompt.split())
+                            c_tokens = len(result_text.split())
+                            self._metrics["prompt_tokens"] += p_tokens
+                            self._metrics["completion_tokens"] += c_tokens
+                            self._metrics["llm_tokens_per_query"] += (p_tokens + c_tokens)
+                            
+                            return result_text
             except httpx.TimeoutException:
                 backoff = (2 ** attempt) + random.uniform(0.1, 1.0)
                 logger.warning("Gemini LLM Transport Timeout (%.1fs) on attempt %d/%d. Retrying in %.2fs...", self.timeout, attempt, self.max_retries, backoff)

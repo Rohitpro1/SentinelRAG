@@ -121,3 +121,29 @@ def test_gemini_2_5_flash_direct_support():
     provider = GeminiLLMProvider(api_key="test_key", model="gemini-2.5-flash")
     assert provider.model == "gemini-2.5-flash"
     assert provider._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+
+
+@pytest.mark.asyncio
+async def test_gemini_prompt_caching_and_metrics():
+    provider = GeminiLLMProvider(api_key="test_key")
+
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "candidates": [
+            {"content": {"parts": [{"text": "Generated response content"}]}}
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", return_value=mock_resp):
+        res1 = await provider._call_gemini("Test prompt string")
+        assert res1 == "Generated response content"
+
+        # Second call with same prompt should hit cache without calling API again
+        res2 = await provider._call_gemini("Test prompt string")
+        assert res2 == "Generated response content"
+
+    metrics = provider.get_metrics()
+    assert metrics["llm_calls_per_query"] == 1
+    assert metrics["cache_hits"] == 1
+    assert metrics["cache_misses"] == 1

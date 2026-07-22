@@ -65,6 +65,7 @@ from app.services.verification.coverage_analyzer import CoverageAnalyzer
 from app.services.verification.diagnostics_builder import DiagnosticsBuilder
 from app.services.verification.evidence_validator import EvidenceValidator
 from app.services.verification.nli_base import BaseNLIVerifier
+from app.services.verification.nli_deterministic import DeterministicNLIVerifier
 from app.services.verification.verification_agent import VerificationAgent
 
 
@@ -140,7 +141,7 @@ def get_reranker() -> BaseReranker:
 
 @lru_cache
 def get_nli_verifier() -> BaseNLIVerifier:
-    return get_ai_provider_factory().create_llm_provider()
+    return DeterministicNLIVerifier()
 
 
 @lru_cache

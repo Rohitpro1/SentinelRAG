@@ -21,7 +21,7 @@ class RetrievalSettings(BaseSettings):
     default_rerank_top_n: int = 5
 
     # --- Per-stage timeouts in ms (Retrieval Domain Design, Section 1) ---
-    embedding_timeout_ms: int = 300
+    embedding_timeout_ms: int = 3000
     vector_search_timeout_ms: int = 400
     rerank_timeout_ms: int = 250
     # Soft ceiling, not a hard cutoff -- see Section 1's rationale: exceeding

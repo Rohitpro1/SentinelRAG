@@ -25,14 +25,14 @@ def resolve_gemini_model_name(model_name: str) -> str:
 class GeminiLLMProvider(BaseLLMProvider):
     """
     Production Gemini LLM Provider using Google Gemini REST API.
-    Model: gemini-2.0-flash.
+    Model: gemini-2.5-flash-lite.
     Handles grounded response generation and NLI verification with retries & backoff.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-2.5-flash-lite",
         max_retries: int = 3,
         timeout: float = 15.0,
     ) -> None:

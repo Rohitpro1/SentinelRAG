@@ -7,6 +7,7 @@ from typing import Optional
 
 import httpx
 
+from app.core.exceptions import SentinelRAGError
 from app.providers.base.llm_provider import BaseLLMProvider
 from app.schemas.retrieval import Decision, NLIRelation
 from app.schemas.retrieval_domain import VerificationDiagnostics, VerifiedEvidence
@@ -30,7 +31,11 @@ class GeminiLLMProvider(BaseLLMProvider):
         max_retries: int = 3,
         timeout: float = 15.0,
     ) -> None:
-        self.api_key = api_key
+        if not api_key or not api_key.strip():
+            raise SentinelRAGError(
+                "GeminiLLMProvider requires a non-empty api_key. Provide GEMINI_API_KEY."
+            )
+        self.api_key = api_key.strip()
         self.model = model
         self.max_retries = max_retries
         self.timeout = timeout
@@ -39,8 +44,6 @@ class GeminiLLMProvider(BaseLLMProvider):
         self._endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
 
     async def _call_gemini(self, prompt: str) -> Optional[str]:
-        if not self.api_key:
-            return None
 
         payload = {
             "contents": [
@@ -86,10 +89,6 @@ class GeminiLLMProvider(BaseLLMProvider):
         diagnostics: Optional[VerificationDiagnostics] = None,
         query: str = "",
     ) -> str:
-        if not self.api_key:
-            logger.warning("GEMINI_API_KEY not set. Using deterministic response generator.")
-            return await self._fallback_generator.generate(decision, evidence, diagnostics, query)
-
         prompt = (
             f"You are SentinelRAG's response generation model.\n"
             f"User Query: {query}\n"
@@ -110,9 +109,6 @@ class GeminiLLMProvider(BaseLLMProvider):
         return await self._fallback_generator.generate(decision, evidence, diagnostics, query)
 
     async def verify_pair(self, text_a: str, text_b: str) -> tuple[NLIRelation, float]:
-        if not self.api_key:
-            return await self._fallback_nli.verify_pair(text_a, text_b)
-
         prompt = (
             f"Determine the Natural Language Inference (NLI) relationship between Premises and Hypothesis.\n"
             f"Premise: {text_a}\n"

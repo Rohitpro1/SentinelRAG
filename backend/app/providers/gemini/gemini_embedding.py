@@ -6,8 +6,8 @@ from typing import Optional
 
 import httpx
 
+from app.core.exceptions import SentinelRAGError, EmbeddingError
 from app.providers.base.embedding_provider import BaseEmbeddingProvider
-from app.services.embedding.deterministic import DeterministicEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
     """
     Production Gemini Embedding Provider using Google Gemini REST API.
     Model: gemini-embedding-001.
-    Includes retries, exponential backoff, rate-limit handling, and fallback.
+    Includes retries, exponential backoff, and rate-limit handling.
     """
 
     def __init__(
@@ -27,12 +27,15 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         max_retries: int = 3,
         timeout: float = 10.0,
     ) -> None:
-        self.api_key = api_key
+        if not api_key or not api_key.strip():
+            raise SentinelRAGError(
+                "GeminiEmbeddingProvider requires a non-empty api_key. Provide GEMINI_API_KEY."
+            )
+        self.api_key = api_key.strip()
         self.model = model
         self._dimensions = dimensions
         self.max_retries = max_retries
         self.timeout = timeout
-        self._fallback = DeterministicEmbedder(dimensions=dimensions)
         self._endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:embedContent"
 
     @property
@@ -40,10 +43,6 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         return self._dimensions
 
     async def embed_query(self, text: str) -> list[float]:
-        if not self.api_key:
-            logger.warning("GEMINI_API_KEY not set. Falling back to deterministic embedder.")
-            return await self._fallback.embed_query(text)
-
         payload = {
             "model": f"models/{self.model}",
             "content": {
@@ -73,8 +72,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
                 if attempt < self.max_retries:
                     await asyncio.sleep(2 ** attempt)
 
-        logger.error("Gemini embedding exhausted retries. Falling back to deterministic embedder.")
-        return await self._fallback.embed_query(text)
+        raise EmbeddingError("Gemini embedding service exhausted retries.")
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         results: list[list[float]] = []

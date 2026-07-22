@@ -49,20 +49,25 @@ async def test_deterministic_provider_execution():
     assert 0.0 <= conf <= 1.0
 
 
-@pytest.mark.asyncio
-async def test_gemini_embedding_provider_fallback():
-    provider = GeminiEmbeddingProvider(api_key=None)
-    vec = await provider.embed_query("hello")
-    assert len(vec) == 768
+from app.core.exceptions import SentinelRAGError
 
 
-@pytest.mark.asyncio
-async def test_gemini_llm_provider_fallback():
-    provider = GeminiLLMProvider(api_key=None)
-    decision = Decision(action=DecisionAction.PROCEED, reasons=["Testing fallback"], confidence=0.9)
-    answer = await provider.generate(decision=decision, query="What is refund policy?")
-    assert "Based on verified evidence" in answer
+def test_factory_gemini_missing_key_raises_error():
+    settings = AISettings(provider="gemini", gemini_api_key=None)
+    factory = AIProviderFactory(settings)
 
-    relation, conf = await provider.verify_pair("A", "B")
-    assert isinstance(relation, NLIRelation)
-    assert 0.0 <= conf <= 1.0
+    with pytest.raises(SentinelRAGError, match="GEMINI_API_KEY is missing"):
+        factory.create_embedding_provider()
+
+    with pytest.raises(SentinelRAGError, match="GEMINI_API_KEY is missing"):
+        factory.create_llm_provider()
+
+
+def test_gemini_embedding_provider_missing_key_raises_error():
+    with pytest.raises(SentinelRAGError, match="requires a non-empty api_key"):
+        GeminiEmbeddingProvider(api_key=None)
+
+
+def test_gemini_llm_provider_missing_key_raises_error():
+    with pytest.raises(SentinelRAGError, match="requires a non-empty api_key"):
+        GeminiLLMProvider(api_key=None)

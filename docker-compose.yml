@@ -1,0 +1,122 @@
+# Unit 2.15 -- reproducible local development environment.
+#
+# Startup workflow (documented fully in docs/UNIT_2_15.md):
+#   docker compose up
+#     -> qdrant/postgres/redis start and run their healthchecks
+#     -> backend waits (depends_on: condition: service_healthy) for all three
+#     -> backend starts once its dependencies report healthy
+#     -> backend's own healthcheck (hitting FastAPI's built-in /docs page --
+#        see note below) must pass before Compose reports it healthy too
+#
+# Observability (Prometheus + Grafana) is OFF by default -- opt in with:
+#   docker compose --profile observability up
+#
+# KNOWN SCOPE BOUNDARY (stated per this unit's "deployment infrastructure
+# only" instruction): the backend container runs with its EXISTING
+# default dependency-injection wiring (Unit 2.14: DeterministicEmbedder,
+# InMemoryVectorRepository, DeterministicReranker, DeterministicNLIVerifier)
+# and does NOT automatically switch to using the qdrant/postgres/redis
+# services defined below. This compose file's job is to provide a
+# reproducible environment where the app AND real infrastructure are
+# both available side-by-side -- e.g. so Units 2.10-2.13's isolated,
+# optional integration tests (pytest -m integration) can run against
+# these real services. Rewiring app/api/dependencies.py's defaults to
+# consume real infrastructure automatically is an application-behavior
+# change, out of scope for a deployment-infrastructure-only unit, and is
+# not made here.
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: sentinelrag-backend:local
+    env_file:
+      - .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Uses FastAPI's built-in auto-docs page as the liveness probe --
+      # deliberately NOT a custom /health endpoint, so this unit adds
+      # zero application code (per instruction 5: "do not introduce
+      # application business logic"). /docs only returns 200 once the
+      # app has finished starting and routing is live, which is exactly
+      # what a liveness probe needs.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  qdrant:
+    image: qdrant/qdrant:v1.11.0
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinelrag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinelrag}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinelrag}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinelrag} -d ${POSTGRES_DB:-sentinelrag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # --- Observability (opt-in via `docker compose --profile observability up`) ---
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["observability"]
+    volumes:
+      - ./infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: ["observability"]
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+
+volumes:
+  qdrant_data:
+  postgres_data:
+  redis_data:

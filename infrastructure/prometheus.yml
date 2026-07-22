@@ -1,0 +1,19 @@
+# Unit 2.15 -- minimal Prometheus config for the optional observability
+# profile.
+#
+# HONEST STATE: the backend does not yet expose a /metrics endpoint --
+# the BaseTelemetrySink abstraction (Architecture Enhancements addendum,
+# Section 3) and its PrometheusTelemetrySink implementation are both
+# future work, not built in any unit through 2.15. This file scrapes
+# Prometheus's own metrics only, so `docker compose --profile
+# observability up` produces a working, inspectable Prometheus instance
+# (visit http://localhost:9090) rather than a config referencing a
+# target that doesn't exist yet. Add a `sentinelrag-backend` scrape job
+# here once a /metrics endpoint exists.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

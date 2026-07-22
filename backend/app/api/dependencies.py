@@ -37,7 +37,7 @@ from functools import lru_cache
 from fastapi import Header, HTTPException
 from langgraph.graph.state import CompiledStateGraph  # type: ignore[import-not-found,import-untyped]
 
-from app.core.settings import get_ai_settings
+from app.core.settings import get_ai_settings, get_chunking_settings
 from app.core.settings.decision_engine import DecisionEngineSettings
 from app.core.settings.retrieval import RetrievalSettings
 from app.orchestration.graph_builder import GraphBuilder
@@ -46,10 +46,12 @@ from app.orchestration.nodes.response_generation import ResponseGenerationNode
 from app.orchestration.nodes.retrieval import RetrievalNode
 from app.orchestration.nodes.verification import VerificationNode
 from app.providers.factory import AIProviderFactory
-from app.repositories.fakes.in_memory import InMemoryVectorRepository
-from app.repositories.interfaces import VectorRepository
+from app.repositories.fakes.in_memory import InMemoryMetadataRepository, InMemoryVectorRepository
+from app.repositories.interfaces import MetadataRepository, VectorRepository
 from app.services.decision_engine.engine import DecisionEngine
 from app.services.embedding.base import BaseEmbedder
+from app.services.ingestion.chunker import BaseChunker, SentenceChunker
+from app.services.ingestion.ingestion_service import IngestionService
 from app.services.query.query_service import QueryService
 from app.services.reranking.base import BaseReranker
 from app.services.response_generation.base import BaseResponseGenerator
@@ -91,6 +93,26 @@ def get_ai_provider_factory() -> AIProviderFactory:
 @lru_cache
 def get_vector_repository() -> VectorRepository:
     return InMemoryVectorRepository()
+
+
+@lru_cache
+def get_metadata_repository() -> MetadataRepository:
+    return InMemoryMetadataRepository()
+
+
+@lru_cache
+def get_chunker() -> BaseChunker:
+    return SentenceChunker(get_chunking_settings())
+
+
+@lru_cache
+def get_ingestion_service() -> IngestionService:
+    return IngestionService(
+        chunker=get_chunker(),
+        embedder=get_embedder(),
+        vector_repo=get_vector_repository(),
+        metadata_repo=get_metadata_repository(),
+    )
 
 
 @lru_cache

@@ -22,6 +22,10 @@ class ChunkingError(SentinelRAGError):
     """Raised when a chunker cannot process input text."""
 
 
+class IngestionError(SentinelRAGError):
+    """Raised when document ingestion, parsing, or storage fails."""
+
+
 class RetrievalError(SentinelRAGError):
     """
     Raised when the Retriever Agent fails to fetch candidates.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from typing import Optional
 
 import httpx
@@ -66,8 +67,10 @@ class GeminiLLMProvider(BaseLLMProvider):
                         json=payload,
                     )
                     if response.status_code == 429:
-                        logger.warning("Gemini rate limit (429) hit during text gen. Retrying...")
-                        await asyncio.sleep(2 ** attempt)
+                        retry_after = response.headers.get("retry-after")
+                        backoff = float(retry_after) if retry_after and retry_after.isdigit() else (2 ** attempt) + random.uniform(0.1, 1.0)
+                        logger.warning("Gemini LLM Rate Limit (HTTP 429) on attempt %d/%d. Backing off for %.2fs...", attempt, self.max_retries, backoff)
+                        await asyncio.sleep(backoff)
                         continue
 
                     response.raise_for_status()
@@ -77,10 +80,15 @@ class GeminiLLMProvider(BaseLLMProvider):
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts:
                             return parts[0].get("text", "").strip()
+            except httpx.TimeoutException:
+                backoff = (2 ** attempt) + random.uniform(0.1, 1.0)
+                logger.warning("Gemini LLM Transport Timeout (%.1fs) on attempt %d/%d. Retrying in %.2fs...", self.timeout, attempt, self.max_retries, backoff)
+                if attempt < self.max_retries:
+                    await asyncio.sleep(backoff)
             except Exception as exc:
                 logger.error("Gemini LLM attempt %d/%d failed: %s", attempt, self.max_retries, exc)
                 if attempt < self.max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep((2 ** attempt) + random.uniform(0.1, 1.0))
 
         return None
 

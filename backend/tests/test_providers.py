@@ -95,3 +95,23 @@ def test_factory_gemini_invalid_model_prevalidation():
         }
         with pytest.raises(SentinelRAGError, match="unavailable for your API key"):
             factory.create_llm_provider()
+
+
+@pytest.mark.asyncio
+async def test_gemini_batch_embed_contents_success():
+    provider = GeminiEmbeddingProvider(api_key="test_key")
+
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "embeddings": [
+            {"values": [0.1, 0.2, 0.3]},
+            {"values": [0.4, 0.5, 0.6]},
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", return_value=mock_resp):
+        res = await provider.embed_batch(["text 1", "text 2"])
+        assert len(res) == 2
+        assert res[0] == [0.1, 0.2, 0.3]
+        assert res[1] == [0.4, 0.5, 0.6]

@@ -10,10 +10,14 @@ class TextDocumentParser(BaseDocumentParser):
             raise IngestionError(f"File {filename} is empty.")
 
         text = ""
-        for encoding in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+        for encoding in ("utf-8", "utf-8-sig"):
             try:
-                text = content.decode(encoding).strip()
-                break
+                decoded = content.decode(encoding).strip()
+                # Ensure decoded text contains printable content
+                cleaned = "".join(ch for ch in decoded if ch.isprintable() or ch in "\n\r\t").strip()
+                if cleaned:
+                    text = cleaned
+                    break
             except UnicodeDecodeError:
                 continue
 

@@ -19,37 +19,41 @@ class PDFDocumentParser(BaseDocumentParser):
 
         pages_text: list[str] = []
 
-        # Attempt using pypdf if installed
         try:
             import pypdf  # type: ignore[import-not-found]
             reader = pypdf.PdfReader(io.BytesIO(content))
             if reader.is_encrypted:
                 raise IngestionError(f"File {filename} is an encrypted PDF.")
 
-            for i, page in enumerate(reader.pages):
+            for page in reader.pages:
                 txt = page.extract_text() or ""
-                if txt.strip():
-                    pages_text.append(txt.strip())
+                # Clean printable text only
+                cleaned = "".join(ch for ch in txt if ch.isprintable() or ch in "\n\r\t").strip()
+                if cleaned:
+                    pages_text.append(cleaned)
         except ImportError:
-            # Native fallback PDF text extraction if pypdf not present
+            # Fallback for plain ASCII text streams when pypdf is not available
             text_blocks = re.findall(b"BT(.*?)ET", content, re.DOTALL)
             extracted = []
             for block in text_blocks:
                 strings = re.findall(b"\\((.*?)\\)", block)
                 if strings:
-                    extracted.append(b" ".join(strings).decode("latin-1", errors="ignore"))
+                    raw_bytes = b" ".join(strings)
+                    try:
+                        decoded = raw_bytes.decode("utf-8", errors="ignore")
+                        cleaned = "".join(ch for ch in decoded if ch.isprintable() or ch in "\n\r\t").strip()
+                        if cleaned:
+                            extracted.append(cleaned)
+                    except Exception:
+                        continue
             if extracted:
                 pages_text.append("\n".join(extracted))
         except Exception as exc:
+            if isinstance(exc, IngestionError):
+                raise
             raise IngestionError(f"Corrupted PDF file {filename}: {exc}") from exc
 
         full_text = "\n\n".join(pages_text).strip()
-        if not full_text:
-            # Extract plain string fallback from PDF stream
-            plain_matches = re.findall(r"\(([A-Za-z0-9\s.,!?-]{4,})\)", content.decode("latin-1", errors="ignore"))
-            if plain_matches:
-                full_text = " ".join(plain_matches).strip()
-
         if not full_text:
             raise IngestionError(f"PDF file {filename} contains no extractable text.")
 

@@ -11,10 +11,13 @@ class MarkdownDocumentParser(BaseDocumentParser):
             raise IngestionError(f"File {filename} is empty.")
 
         text = ""
-        for encoding in ("utf-8", "utf-8-sig", "latin-1"):
+        for encoding in ("utf-8", "utf-8-sig"):
             try:
-                text = content.decode(encoding).strip()
-                break
+                decoded = content.decode(encoding).strip()
+                cleaned = "".join(ch for ch in decoded if ch.isprintable() or ch in "\n\r\t").strip()
+                if cleaned:
+                    text = cleaned
+                    break
             except UnicodeDecodeError:
                 continue
 

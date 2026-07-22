@@ -27,14 +27,11 @@ from app.core.settings.storage import StorageSettings
 
 def create_qdrant_client(settings: StorageSettings) -> AsyncQdrantClient:
     """
-    Constructs a new AsyncQdrantClient. Deterministic and side-effect-free
-    beyond client construction itself -- does NOT eagerly open a network
-    connection (qdrant-client's async client is lazy; the first real
-    request establishes the connection), so this factory can be called
-    at import/startup time without requiring Qdrant to already be reachable.
+    Constructs a new AsyncQdrantClient. Supports both local and cloud Qdrant (via api_key).
     """
     return AsyncQdrantClient(
         url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key or None,
         timeout=int(settings.qdrant_timeout_ms / 1000),
     )
 

@@ -37,6 +37,7 @@ from functools import lru_cache
 from fastapi import Header, HTTPException
 from langgraph.graph.state import CompiledStateGraph  # type: ignore[import-not-found,import-untyped]
 
+from app.core.settings import get_ai_settings
 from app.core.settings.decision_engine import DecisionEngineSettings
 from app.core.settings.retrieval import RetrievalSettings
 from app.orchestration.graph_builder import GraphBuilder
@@ -44,16 +45,14 @@ from app.orchestration.nodes.decision import DecisionNode
 from app.orchestration.nodes.response_generation import ResponseGenerationNode
 from app.orchestration.nodes.retrieval import RetrievalNode
 from app.orchestration.nodes.verification import VerificationNode
+from app.providers.factory import AIProviderFactory
 from app.repositories.fakes.in_memory import InMemoryVectorRepository
 from app.repositories.interfaces import VectorRepository
 from app.services.decision_engine.engine import DecisionEngine
 from app.services.embedding.base import BaseEmbedder
-from app.services.embedding.deterministic import DeterministicEmbedder
 from app.services.query.query_service import QueryService
 from app.services.reranking.base import BaseReranker
-from app.services.reranking.deterministic import DeterministicReranker
 from app.services.response_generation.base import BaseResponseGenerator
-from app.services.response_generation.service import ResponseGenerator
 from app.services.retrieval.embedding_service import EmbeddingService
 from app.services.retrieval.fusion_service import FusionService
 from app.services.retrieval.reranking_service import RerankingService
@@ -64,7 +63,6 @@ from app.services.verification.coverage_analyzer import CoverageAnalyzer
 from app.services.verification.diagnostics_builder import DiagnosticsBuilder
 from app.services.verification.evidence_validator import EvidenceValidator
 from app.services.verification.nli_base import BaseNLIVerifier
-from app.services.verification.nli_deterministic import DeterministicNLIVerifier
 from app.services.verification.verification_agent import VerificationAgent
 
 
@@ -77,23 +75,19 @@ from app.services.verification.verification_agent import VerificationAgent
 # one, rather than bolting auth on later by editing the route itself.
 # ----------------------------------------------------------------------
 async def get_current_principal(authorization: str = Header(default=None)) -> str:
-    """
-    PLACEHOLDER -- does not verify a real token. Any non-empty
-    Authorization header is accepted; a missing header is rejected with
-    401. This is intentionally weak and clearly marked as such: replacing
-    this function's body with real Auth0 JWT verification (Milestone 3)
-    is the entire scope of that future change -- the route and everything
-    below it never needs to change, since they only depend on this
-    function's signature (returns a principal identifier string).
-    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     return authorization
 
 
 # ----------------------------------------------------------------------
-# Deterministic-backed singleton wiring
+# Provider-backed singleton wiring
 # ----------------------------------------------------------------------
+@lru_cache
+def get_ai_provider_factory() -> AIProviderFactory:
+    return AIProviderFactory(get_ai_settings())
+
+
 @lru_cache
 def get_vector_repository() -> VectorRepository:
     return InMemoryVectorRepository()
@@ -101,22 +95,23 @@ def get_vector_repository() -> VectorRepository:
 
 @lru_cache
 def get_embedder() -> BaseEmbedder:
-    return DeterministicEmbedder(dimensions=16)
+    return get_ai_provider_factory().create_embedding_provider()
 
 
 @lru_cache
 def get_reranker() -> BaseReranker:
-    return DeterministicReranker()
+    return get_ai_provider_factory().create_reranker_provider()
 
 
 @lru_cache
 def get_nli_verifier() -> BaseNLIVerifier:
-    return DeterministicNLIVerifier()
+    return get_ai_provider_factory().create_llm_provider()
 
 
 @lru_cache
 def get_response_generator() -> BaseResponseGenerator:
-    return ResponseGenerator()
+    return get_ai_provider_factory().create_llm_provider()
+
 
 
 @lru_cache

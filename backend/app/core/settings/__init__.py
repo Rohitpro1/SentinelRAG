@@ -12,6 +12,7 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.settings.ai_provider import AISettings
 from app.core.settings.chunking import ChunkingSettings
 from app.core.settings.decision_engine import DecisionEngineSettings
 from app.core.settings.nli import NLISettings
@@ -23,9 +24,9 @@ from app.core.settings.security import SecuritySettings
 from app.core.settings.storage import StorageSettings
 
 __all__ = [
-    "ChunkingSettings", "DecisionEngineSettings", "EmbeddingSettings", "RetrievalSettings",
+    "AISettings", "ChunkingSettings", "DecisionEngineSettings", "EmbeddingSettings", "RetrievalSettings",
     "RerankingSettings", "SecuritySettings", "StorageSettings", "AppSettings",
-    "get_app_settings", "get_decision_engine_settings", "get_chunking_settings",
+    "get_app_settings", "get_ai_settings", "get_decision_engine_settings", "get_chunking_settings",
     "get_storage_settings", "get_security_settings", "get_embedding_settings",
     "get_retrieval_settings", "get_reranking_settings", "get_nli_settings", "get_planner_settings",
 ]
@@ -38,6 +39,7 @@ class AppSettings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
+    ai: AISettings = Field(default_factory=AISettings)
     decision_engine: DecisionEngineSettings = Field(default_factory=DecisionEngineSettings)
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
@@ -52,6 +54,11 @@ class AppSettings(BaseSettings):
 @lru_cache
 def get_app_settings() -> AppSettings:
     return AppSettings()
+
+
+@lru_cache
+def get_ai_settings() -> AISettings:
+    return AISettings()
 
 
 @lru_cache
@@ -97,3 +104,4 @@ def get_nli_settings() -> NLISettings:
 @lru_cache
 def get_planner_settings() -> PlannerSettings:
     return PlannerSettings()
+

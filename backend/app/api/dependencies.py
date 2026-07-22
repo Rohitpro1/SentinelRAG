@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from langgraph.graph.state import CompiledStateGraph  # type: ignore[import-not-found,import-untyped]
 
 from app.core.settings import get_ai_settings, get_chunking_settings
@@ -68,18 +68,26 @@ from app.services.verification.nli_base import BaseNLIVerifier
 from app.services.verification.verification_agent import VerificationAgent
 
 
+from typing import Optional
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+http_bearer_scheme = HTTPBearer(auto_error=False)
+
+
 # ----------------------------------------------------------------------
-# Placeholder authentication (instruction 1: "authentication (placeholder
-# if not yet implemented)"). SecuritySettings (Milestone 1) already
-# declares AUTH0_DOMAIN/AUTH0_AUDIENCE fields for when real Auth0
-# integration is built (Milestone 3) -- this dependency does not read
-# them yet. It exists so the route has an explicit auth seam from day
-# one, rather than bolting auth on later by editing the route itself.
+# OpenAPI HTTPBearer security dependency
+# Accepts Swagger Bearer tokens as well as raw Authorization headers.
+# Rejects missing credentials with 401 Unauthorized.
 # ----------------------------------------------------------------------
-async def get_current_principal(authorization: str = Header(default=None)) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
-    return authorization
+async def get_current_principal(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer_scheme),
+    raw_authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> str:
+    if credentials and credentials.credentials:
+        return f"Bearer {credentials.credentials}"
+    if raw_authorization and raw_authorization.strip():
+        return raw_authorization.strip()
+    raise HTTPException(status_code=401, detail="Missing Authorization header")
 
 
 # ----------------------------------------------------------------------

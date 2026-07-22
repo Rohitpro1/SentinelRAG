@@ -105,6 +105,41 @@ def test_query_missing_authorization_header_returns_401(client):
     app.dependency_overrides[get_current_principal] = lambda: "test-principal"  # restore
 
 
+def test_query_with_bearer_authorization_header_succeeds():
+    app.dependency_overrides.pop(get_current_principal, None)
+    client_local = TestClient(app)
+    response = client_local.post(
+        "/api/v1/query",
+        json={"query": "refund policy"},
+        headers={"Authorization": "Bearer dev-token"},
+    )
+    app.dependency_overrides[get_current_principal] = lambda: "test-principal"
+    assert response.status_code == 200
+
+
+def test_query_with_raw_authorization_header_succeeds():
+    app.dependency_overrides.pop(get_current_principal, None)
+    client_local = TestClient(app)
+    response = client_local.post(
+        "/api/v1/query",
+        json={"query": "refund policy"},
+        headers={"Authorization": "dev-token"},
+    )
+    app.dependency_overrides[get_current_principal] = lambda: "test-principal"
+    assert response.status_code == 200
+
+
+def test_openapi_security_schema_contains_http_bearer():
+    client_local = TestClient(app)
+    response = client_local.get("/openapi.json")
+    assert response.status_code == 200
+    schema = response.json()
+    assert "components" in schema
+    assert "securitySchemes" in schema["components"]
+    assert "HTTPBearer" in schema["components"]["securitySchemes"]
+    assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+
+
 def test_query_empty_string_returns_400_not_422():
     """
     Instruction 3 explicitly maps ValidationError -> 400 (not FastAPI's

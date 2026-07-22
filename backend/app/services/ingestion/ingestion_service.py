@@ -98,7 +98,7 @@ class IngestionService:
     ) -> dict[str, Any]:
         start_time = datetime.utcnow()
         try:
-            log_event(logger, "ingestion_started", document_id=document_id, filename=filename)
+            log_event(logger, "ingestion_started", document_id=document_id, document_filename=filename)
 
             # 1. Parse Document
             parser = DocumentParserFactory.get_parser(filename)

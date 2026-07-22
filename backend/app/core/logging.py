@@ -36,6 +36,19 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+_SAFE_RENAME_MAP = {
+    "filename": "document_filename",
+    "name": "logger_name",
+    "module": "source_module",
+    "pathname": "upload_path",
+    "funcName": "caller_function",
+    "lineno": "source_line",
+    "message": "event_message",
+    "process": "process_id",
+    "thread": "thread_id",
+}
+
+
 def configure_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     if root.handlers:
@@ -51,4 +64,12 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def log_event(logger: logging.Logger, event: str, level: int = logging.INFO, **fields: Any) -> None:
-    logger.log(level, event, extra=fields)
+    safe_fields: dict[str, Any] = {}
+    for key, value in fields.items():
+        if key in _STANDARD_RECORD_ATTRS:
+            new_key = _SAFE_RENAME_MAP.get(key, f"custom_{key}")
+            safe_fields[new_key] = value
+        else:
+            safe_fields[key] = value
+    logger.log(level, event, extra=safe_fields)
+

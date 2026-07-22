@@ -18,6 +18,24 @@ from app.services.verification.nli_deterministic import DeterministicNLIVerifier
 logger = logging.getLogger(__name__)
 
 
+MODEL_ALIASES: dict[str, str] = {
+    "gemini-2.5-flash": "gemini-1.5-flash",
+    "gemini-2.5-pro": "gemini-1.5-pro",
+    "gemini-2.0": "gemini-2.0-flash-exp",
+    "gemini-flash": "gemini-1.5-flash",
+    "gemini-pro": "gemini-1.5-pro",
+}
+
+
+def resolve_gemini_model_name(model_name: str) -> str:
+    clean = model_name.strip().removeprefix("models/")
+    if clean in MODEL_ALIASES:
+        resolved = MODEL_ALIASES[clean]
+        logger.info("Resolving Gemini model alias: '%s' -> '%s'", clean, resolved)
+        return resolved
+    return clean
+
+
 class GeminiLLMProvider(BaseLLMProvider):
     """
     Production Gemini LLM Provider using Google Gemini REST API.
@@ -37,13 +55,19 @@ class GeminiLLMProvider(BaseLLMProvider):
                 "GeminiLLMProvider requires a non-empty api_key. Provide GEMINI_API_KEY."
             )
         self.api_key = api_key.strip()
-        # Clean model name if passed with 'models/' prefix
-        self.model = model.strip().removeprefix("models/")
+        raw_model = model.strip()
+        self.model = resolve_gemini_model_name(raw_model)
         self.max_retries = max_retries
         self.timeout = timeout
         self._fallback_generator = ResponseGenerator()
         self._fallback_nli = DeterministicNLIVerifier()
         self._endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        logger.info(
+            "GeminiLLMProvider initialized: resolved_model='%s' (raw='%s'), client='raw REST API (httpx.AsyncClient)', api_version='v1beta', endpoint='%s'",
+            self.model,
+            raw_model,
+            self._endpoint,
+        )
 
     async def _call_gemini(self, prompt: str) -> Optional[str]:
         logger.info("Calling Gemini LLM API: model='%s', url='%s'", self.model, self._endpoint)

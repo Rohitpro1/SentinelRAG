@@ -61,7 +61,9 @@ class AIProviderFactory:
 
     def _validate_gemini_model(self, api_key: str, model_name: str, expected_method: str) -> None:
         import httpx
-        clean_name = model_name.strip().removeprefix("models/")
+        from app.providers.gemini.gemini_llm import resolve_gemini_model_name
+
+        clean_name = resolve_gemini_model_name(model_name)
         url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
         try:
             with httpx.Client(timeout=10.0) as client:

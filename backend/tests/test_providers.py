@@ -115,3 +115,9 @@ async def test_gemini_batch_embed_contents_success():
         assert len(res) == 2
         assert res[0] == [0.1, 0.2, 0.3]
         assert res[1] == [0.4, 0.5, 0.6]
+
+
+def test_gemini_2_5_flash_alias_resolution():
+    provider = GeminiLLMProvider(api_key="test_key", model="gemini-2.5-flash")
+    assert provider.model == "gemini-1.5-flash"
+    assert provider._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"

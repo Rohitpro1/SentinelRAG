@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 class GeminiLLMProvider(BaseLLMProvider):
     """
     Production Gemini LLM Provider using Google Gemini REST API.
-    Model: gemini-2.5-flash.
+    Model: gemini-1.5-flash.
     Handles grounded response generation and NLI verification with retries & backoff.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-1.5-flash",
         max_retries: int = 3,
         timeout: float = 15.0,
     ) -> None:
@@ -36,7 +36,8 @@ class GeminiLLMProvider(BaseLLMProvider):
                 "GeminiLLMProvider requires a non-empty api_key. Provide GEMINI_API_KEY."
             )
         self.api_key = api_key.strip()
-        self.model = model
+        # Clean model name if passed with 'models/' prefix
+        self.model = model.strip().removeprefix("models/")
         self.max_retries = max_retries
         self.timeout = timeout
         self._fallback_generator = ResponseGenerator()
@@ -44,6 +45,7 @@ class GeminiLLMProvider(BaseLLMProvider):
         self._endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
 
     async def _call_gemini(self, prompt: str) -> Optional[str]:
+        logger.info("Calling Gemini LLM API: model='%s', url='%s'", self.model, self._endpoint)
 
         payload = {
             "contents": [

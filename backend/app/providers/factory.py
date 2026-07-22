@@ -57,6 +57,39 @@ class AIProviderFactory:
         else:
             logger.info("AIProviderFactory: Configured AI_PROVIDER='%s'. Using deterministic providers.", provider_name)
 
+    def _validate_gemini_model(self, api_key: str, model_name: str, expected_method: str) -> None:
+        import httpx
+        clean_name = model_name.strip().removeprefix("models/")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(url)
+                if resp.status_code != 200:
+                    logger.warning("Could not pre-validate Gemini model via GET /models (HTTP %d). Proceeding.", resp.status_code)
+                    return
+                data = resp.json()
+                models = data.get("models", [])
+                available_models = [m.get("name", "").removeprefix("models/") for m in models]
+                if available_models and clean_name not in available_models:
+                    logger.error("Configured Gemini model '%s' not found in available models: %s", clean_name, available_models)
+                    raise SentinelRAGError(
+                        f"Configuration error: Configured Gemini model '{clean_name}' is unavailable for your API key. "
+                        f"Available models: {', '.join(available_models[:10])}"
+                    )
+                target = next((m for m in models if m.get("name", "").removeprefix("models/") == clean_name), None)
+                if target and expected_method:
+                    methods = target.get("supportedGenerationMethods", [])
+                    if expected_method not in methods:
+                        raise SentinelRAGError(
+                            f"Configuration error: Gemini model '{clean_name}' does not support method '{expected_method}'. "
+                            f"Supported methods: {', '.join(methods)}"
+                        )
+                logger.info("Gemini model validation passed: '%s' is available and supports '%s'.", clean_name, expected_method)
+        except SentinelRAGError:
+            raise
+        except Exception as exc:
+            logger.warning("Gemini model validation encountered error (%s). Proceeding.", exc)
+
     def create_embedding_provider(self) -> BaseEmbeddingProvider:
         provider_name = self.settings.provider.lower().strip()
         if provider_name == "gemini":
@@ -65,6 +98,7 @@ class AIProviderFactory:
                 raise SentinelRAGError(
                     "Configuration error: AI_PROVIDER is set to 'gemini' but GEMINI_API_KEY is missing or empty."
                 )
+            self._validate_gemini_model(key, self.settings.gemini_embedding_model, "embedContent")
             logger.info("Creating Gemini Embedding Provider (%s, key source: %s, key length: %d)", self.settings.gemini_embedding_model, source, len(key))
             return GeminiEmbeddingProvider(
                 api_key=key,
@@ -80,6 +114,7 @@ class AIProviderFactory:
                 raise SentinelRAGError(
                     "Configuration error: AI_PROVIDER is set to 'gemini' but GEMINI_API_KEY is missing or empty."
                 )
+            self._validate_gemini_model(key, self.settings.gemini_model, "generateContent")
             logger.info("Creating Gemini LLM Provider (%s, key source: %s, key length: %d)", self.settings.gemini_model, source, len(key))
             return GeminiLLMProvider(
                 api_key=key,

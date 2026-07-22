@@ -17,10 +17,10 @@ class AISettings(BaseSettings):
         validation_alias=AliasChoices("AI_GEMINI_API_KEY", "GEMINI_API_KEY"),
     )
     gemini_model: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-1.5-flash",
         validation_alias=AliasChoices("AI_GEMINI_MODEL", "GEMINI_MODEL"),
     )
     gemini_embedding_model: str = Field(
-        default="gemini-embedding-001",
+        default="text-embedding-004",
         validation_alias=AliasChoices("AI_GEMINI_EMBEDDING_MODEL", "GEMINI_EMBEDDING_MODEL"),
     )

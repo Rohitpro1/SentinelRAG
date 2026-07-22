@@ -71,3 +71,27 @@ def test_gemini_embedding_provider_missing_key_raises_error():
 def test_gemini_llm_provider_missing_key_raises_error():
     with pytest.raises(SentinelRAGError, match="requires a non-empty api_key"):
         GeminiLLMProvider(api_key=None)
+
+
+def test_gemini_model_name_normalization():
+    provider_llm = GeminiLLMProvider(api_key="test_key", model="models/gemini-1.5-flash")
+    assert provider_llm.model == "gemini-1.5-flash"
+    assert provider_llm._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+    provider_embed = GeminiEmbeddingProvider(api_key="test_key", model="models/text-embedding-004")
+    assert provider_embed.model == "text-embedding-004"
+    assert provider_embed._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
+
+
+def test_factory_gemini_invalid_model_prevalidation():
+    settings = AISettings(provider="gemini", gemini_api_key="test_key", gemini_model="nonexistent-model")
+    factory = AIProviderFactory(settings)
+
+    mock_resp = patch("httpx.Client.get")
+    with mock_resp as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "models": [{"name": "models/gemini-1.5-flash", "supportedGenerationMethods": ["generateContent"]}]
+        }
+        with pytest.raises(SentinelRAGError, match="unavailable for your API key"):
+            factory.create_llm_provider()

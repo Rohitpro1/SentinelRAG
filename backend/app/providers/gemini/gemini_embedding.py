@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 class GeminiEmbeddingProvider(BaseEmbeddingProvider):
     """
     Production Gemini Embedding Provider using Google Gemini REST API.
-    Model: gemini-embedding-001.
+    Model: text-embedding-004.
     Includes retries, exponential backoff, and rate-limit handling.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-embedding-001",
+        model: str = "text-embedding-004",
         dimensions: int = 768,
         max_retries: int = 3,
         timeout: float = 10.0,
@@ -32,7 +32,8 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
                 "GeminiEmbeddingProvider requires a non-empty api_key. Provide GEMINI_API_KEY."
             )
         self.api_key = api_key.strip()
-        self.model = model
+        # Clean model name if passed with 'models/' prefix
+        self.model = model.strip().removeprefix("models/")
         self._dimensions = dimensions
         self.max_retries = max_retries
         self.timeout = timeout
@@ -43,6 +44,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         return self._dimensions
 
     async def embed_query(self, text: str) -> list[float]:
+        logger.info("Calling Gemini Embedding API: model='%s', url='%s'", self.model, self._endpoint)
         payload = {
             "model": f"models/{self.model}",
             "content": {

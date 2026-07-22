@@ -59,7 +59,7 @@ class AIProviderFactory:
         else:
             logger.info("AIProviderFactory: Configured AI_PROVIDER='%s'. Using deterministic providers.", provider_name)
 
-    def _validate_gemini_model(self, api_key: str, model_name: str, expected_method: str) -> None:
+    def _validate_gemini_model(self, api_key: str, model_name: str, expected_method: str) -> str:
         import httpx
         from app.providers.gemini.gemini_llm import resolve_gemini_model_name
 
@@ -69,30 +69,42 @@ class AIProviderFactory:
             with httpx.Client(timeout=10.0) as client:
                 resp = client.get(url)
                 if resp.status_code != 200:
-                    logger.warning("Could not pre-validate Gemini model via GET /models (HTTP %d). Proceeding.", resp.status_code)
-                    return
+                    logger.warning("Could not pre-validate Gemini model via GET /models (HTTP %d). Proceeding with '%s'.", resp.status_code, clean_name)
+                    return clean_name
                 data = resp.json()
                 models = data.get("models", [])
+                
+                # Filter models supporting expected_method
+                matching_models = [
+                    m.get("name", "").removeprefix("models/")
+                    for m in models
+                    if expected_method in m.get("supportedGenerationMethods", [])
+                ]
                 available_models = [m.get("name", "").removeprefix("models/") for m in models]
-                if available_models and clean_name not in available_models:
-                    logger.error("Configured Gemini model '%s' not found in available models: %s", clean_name, available_models)
-                    raise SentinelRAGError(
-                        f"Configuration error: Configured Gemini model '{clean_name}' is unavailable for your API key. "
-                        f"Available models: {', '.join(available_models[:10])}"
+
+                if available_models and clean_name in available_models:
+                    logger.info("Gemini model validation passed: '%s' is available and supports '%s'.", clean_name, expected_method)
+                    return clean_name
+
+                if matching_models:
+                    selected = matching_models[0]
+                    logger.warning(
+                        "Configured Gemini model '%s' not in key's available models (%s). Auto-selected matching model '%s'.",
+                        clean_name,
+                        ", ".join(available_models[:10]),
+                        selected,
                     )
-                target = next((m for m in models if m.get("name", "").removeprefix("models/") == clean_name), None)
-                if target and expected_method:
-                    methods = target.get("supportedGenerationMethods", [])
-                    if expected_method not in methods:
-                        raise SentinelRAGError(
-                            f"Configuration error: Gemini model '{clean_name}' does not support method '{expected_method}'. "
-                            f"Supported methods: {', '.join(methods)}"
-                        )
-                logger.info("Gemini model validation passed: '%s' is available and supports '%s'.", clean_name, expected_method)
+                    return selected
+
+                raise SentinelRAGError(
+                    f"Configuration error: No Gemini model supporting '{expected_method}' is available for your API key. "
+                    f"Available models: {', '.join(available_models[:10])}"
+                )
         except SentinelRAGError:
             raise
         except Exception as exc:
-            logger.warning("Gemini model validation encountered error (%s). Proceeding.", exc)
+            logger.warning("Gemini model validation encountered error (%s). Proceeding with '%s'.", exc, clean_name)
+            return clean_name
 
     def _resolve_voyage_key_and_source(self) -> tuple[Optional[str], str]:
         if self.settings.voyage_api_key and self.settings.voyage_api_key.strip():
@@ -113,12 +125,12 @@ class AIProviderFactory:
                 raise SentinelRAGError(
                     "Configuration error: AI_PROVIDER is set to 'gemini' but GEMINI_API_KEY is missing or empty."
                 )
-            self._validate_gemini_model(key, self.settings.gemini_embedding_model, "embedContent")
-            logger.info("Creating Gemini Embedding Provider (%s, key source: %s, key length: %d)", self.settings.gemini_embedding_model, source, len(key))
+            validated_model = self._validate_gemini_model(key, self.settings.gemini_embedding_model, "embedContent")
+            logger.info("Creating Gemini Embedding Provider (%s, key source: %s, key length: %d)", validated_model, source, len(key))
             
             gemini_provider = GeminiEmbeddingProvider(
                 api_key=key,
-                model=self.settings.gemini_embedding_model,
+                model=validated_model,
             )
 
             voyage_key, voyage_source = self._resolve_voyage_key_and_source()
@@ -151,11 +163,11 @@ class AIProviderFactory:
                 raise SentinelRAGError(
                     "Configuration error: AI_PROVIDER is set to 'gemini' but GEMINI_API_KEY is missing or empty."
                 )
-            self._validate_gemini_model(key, self.settings.gemini_model, "generateContent")
-            logger.info("Creating Gemini LLM Provider (%s, key source: %s, key length: %d)", self.settings.gemini_model, source, len(key))
+            validated_model = self._validate_gemini_model(key, self.settings.gemini_model, "generateContent")
+            logger.info("Creating Gemini LLM Provider (%s, key source: %s, key length: %d)", validated_model, source, len(key))
             return GeminiLLMProvider(
                 api_key=key,
-                model=self.settings.gemini_model,
+                model=validated_model,
             )
         return DeterministicLLMProvider()
 

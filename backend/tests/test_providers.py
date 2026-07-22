@@ -91,10 +91,10 @@ def test_factory_gemini_invalid_model_prevalidation():
     with mock_resp as mock_get:
         mock_get.return_value.status_code = 200
         mock_get.return_value.json.return_value = {
-            "models": [{"name": "models/gemini-1.5-flash", "supportedGenerationMethods": ["generateContent"]}]
+            "models": [{"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]}]
         }
-        with pytest.raises(SentinelRAGError, match="unavailable for your API key"):
-            factory.create_llm_provider()
+        llm = factory.create_llm_provider()
+        assert llm.model == "gemini-2.5-flash"
 
 
 @pytest.mark.asyncio
@@ -117,7 +117,7 @@ async def test_gemini_batch_embed_contents_success():
         assert res[1] == [0.4, 0.5, 0.6]
 
 
-def test_gemini_2_5_flash_alias_resolution():
+def test_gemini_2_5_flash_direct_support():
     provider = GeminiLLMProvider(api_key="test_key", model="gemini-2.5-flash")
-    assert provider.model == "gemini-1.5-flash"
-    assert provider._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    assert provider.model == "gemini-2.5-flash"
+    assert provider._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"

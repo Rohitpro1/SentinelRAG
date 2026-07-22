@@ -18,35 +18,21 @@ from app.services.verification.nli_deterministic import DeterministicNLIVerifier
 logger = logging.getLogger(__name__)
 
 
-MODEL_ALIASES: dict[str, str] = {
-    "gemini-2.5-flash": "gemini-1.5-flash",
-    "gemini-2.5-pro": "gemini-1.5-pro",
-    "gemini-2.0": "gemini-2.0-flash-exp",
-    "gemini-flash": "gemini-1.5-flash",
-    "gemini-pro": "gemini-1.5-pro",
-}
-
-
 def resolve_gemini_model_name(model_name: str) -> str:
-    clean = model_name.strip().removeprefix("models/")
-    if clean in MODEL_ALIASES:
-        resolved = MODEL_ALIASES[clean]
-        logger.info("Resolving Gemini model alias: '%s' -> '%s'", clean, resolved)
-        return resolved
-    return clean
+    return model_name.strip().removeprefix("models/")
 
 
 class GeminiLLMProvider(BaseLLMProvider):
     """
     Production Gemini LLM Provider using Google Gemini REST API.
-    Model: gemini-1.5-flash.
+    Model: gemini-2.5-flash.
     Handles grounded response generation and NLI verification with retries & backoff.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-1.5-flash",
+        model: str = "gemini-2.5-flash",
         max_retries: int = 3,
         timeout: float = 15.0,
     ) -> None:

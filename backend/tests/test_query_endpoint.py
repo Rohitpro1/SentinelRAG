@@ -94,7 +94,7 @@ def test_query_response_shape_matches_contract(client):
     response = client.post("/api/v1/query", json={"query": "refund policy"})
     body = response.json()
     assert set(body.keys()) == {
-        "action", "confidence", "reasons", "retry_count", "contradiction_detected", "evidence_coverage",
+        "action", "confidence", "reasons", "retry_count", "contradiction_detected", "evidence_coverage", "answer",
     }
 
 
@@ -203,7 +203,9 @@ def test_query_endpoint_uses_default_deterministic_wiring_when_not_overridden():
     """
     from app.api.dependencies import get_query_service as real_get_query_service
 
-    real_get_query_service.cache_clear()
+    from app.api.dependencies import get_vector_repository, get_retriever_agent, get_compiled_graph
+    for factory in (get_vector_repository, get_retriever_agent, get_compiled_graph, real_get_query_service):
+        factory.cache_clear()
     client_local = TestClient(app)
     app.dependency_overrides[get_current_principal] = lambda: "test-principal"
     response = client_local.post("/api/v1/query", json={"query": "anything at all"})

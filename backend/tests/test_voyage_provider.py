@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from app.core.exceptions import SentinelRAGError, EmbeddingError
 from app.providers.voyage.voyage_embedding import VoyageEmbeddingProvider
@@ -21,7 +21,7 @@ def test_voyage_provider_missing_key():
 async def test_voyage_embed_query_success():
     provider = VoyageEmbeddingProvider(api_key="test_voyage_key")
 
-    mock_resp = AsyncMock()
+    mock_resp = Mock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
         "data": [
@@ -39,7 +39,7 @@ async def test_voyage_embed_query_success():
 async def test_voyage_embed_batch_success():
     provider = VoyageEmbeddingProvider(api_key="test_voyage_key")
 
-    mock_resp = AsyncMock()
+    mock_resp = Mock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
         "data": [

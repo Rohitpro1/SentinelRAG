@@ -73,6 +73,9 @@ class _FakeAsyncClient:
         self._raise_on_delete = raise_on_delete
         self.upsert_calls = 0
 
+    async def collection_exists(self, collection):
+        return True
+
     async def query_points(self, **kwargs):
         if self._raise_on_search:
             raise self._raise_on_search

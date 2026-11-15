@@ -9,7 +9,18 @@ class AISettings(BaseSettings):
         env_file=".env",
         extra="ignore",
         protected_namespaces=(),
+        populate_by_name=True,
     )
+
+    def __init__(self, **values):
+        # Normalize explicit field names before settings sources merge. Otherwise
+        # an environment alias can shadow a constructor value for the same field.
+        for name, field in type(self).model_fields.items():
+            alias = field.validation_alias
+            if name in values and isinstance(alias, AliasChoices):
+                if not any(choice in values for choice in alias.choices):
+                    values[alias.choices[0]] = values.pop(name)
+        super().__init__(**values)
 
     provider: str = "deterministic"
     gemini_api_key: Optional[str] = Field(

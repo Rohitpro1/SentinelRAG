@@ -1,80 +1,89 @@
-# SentinelRAG — Production-Grade Self-Correcting RAG Framework
+# SentinelRAG
 
-SentinelRAG is a production-grade, self-correcting Retrieval-Augmented Generation (RAG) platform powered by **LangGraph**, **FastAPI**, **Qdrant**, **PostgreSQL**, **Redis**, and **Google Gemini AI**.
+**Evidence-aware retrieval with explicit decisions, bounded retries, and replaceable AI providers.**
 
----
+SentinelRAG explores how a retrieval-augmented generation service can inspect its evidence before answering. A FastAPI backend coordinates retrieval, verification, and response generation through a LangGraph state machine. A React interface exposes query and ingestion workflows.
 
-## 🌟 Key Subsystems
+## Architecture
 
-1. **Self-Correcting LangGraph State Machine**:
-   - `Planner Node` -> `Retrieval Node` -> `Verification Node` -> `Decision Node` -> `Response Generation Node`.
-   - Conditional edge retry loops (`RETRY_RETRIEVAL`) with query rewriting on sub-threshold confidence.
-
-2. **Provider-Based AI Layer (Gemini First)**:
-   - Default Production AI Provider: Google Gemini (`gemini-2.5-flash` for reasoning & NLI, `gemini-embedding-001` for vector embeddings).
-   - Deterministic testing providers for zero-dependency offline execution & CI/CD.
-
-3. **Knowledge Ingestion Pipeline**:
-   - Supports **PDF**, **DOCX**, **TXT**, and **Markdown** file uploads via REST API (`POST /api/v1/documents/upload`).
-   - SHA-256 duplicate detection fingerprinting (`status: already_exists`).
-   - Adaptive sentence-boundary chunking with token budgets and overlaps (`SentenceChunker`).
-   - Qdrant Vector DB payload storage & metadata management.
-   - Non-blocking asynchronous processing with polling endpoint (`GET /api/v1/documents/{id}/status`).
-
-4. **Observability & Visualizer Frontend**:
-   - Built matching the Stitch MCP design system (`#4F46E5` primary, Geist & JetBrains Mono typography, glassmorphism UI).
-   - Live query playground, parameter controls (`top_k`, `rerank_top_n`), NLI contradiction stats, evidence coverage telemetry, and vector chunk browser.
-
----
-
-## 🚀 Quickstart & API Documentation
-
-### Environment Setup (`.env`)
-```env
-AI_PROVIDER=gemini
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-
-STORAGE__QDRANT_URL=https://xxxxxx.cloud.qdrant.io:6333
-STORAGE__QDRANT_API_KEY=your_qdrant_cloud_key
-STORAGE__POSTGRES_DSN=postgresql+asyncpg://user:pass@ep-xyz.neon.tech/sentinelrag?sslmode=require
-STORAGE__REDIS_URL=rediss://default:pass@xyz.upstash.io:6379
+```mermaid
+flowchart LR
+    API[FastAPI query endpoint] --> Plan[Planner]
+    Plan --> Retrieve[Retrieval and reranking]
+    Retrieve --> Verify[Evidence verification]
+    Verify --> Decide{Decision}
+    Decide -->|retry budget remains| Plan
+    Decide -->|answer or abstain| Generate[Response generation]
+    Generate --> Result[Answer and diagnostics]
+    Upload[Document upload] --> Chunk[Parse and chunk]
+    Chunk --> Embed[Embedding provider]
+    Embed --> Store[Vector and metadata repositories]
+    Store --> Retrieve
 ```
 
-### Document Ingestion (cURL Example)
-```bash
-curl -X POST \
-  -H "Authorization: Bearer dev-token" \
-  -F "file=@knowledge_policy.pdf" \
-  http://localhost:8000/api/v1/documents/upload
-```
+The dependency assembly lives in [`backend/app/api/dependencies.py`](backend/app/api/dependencies.py). Services depend on interfaces, allowing deterministic providers and in-memory repositories to support local development without paid APIs.
 
-### RAG Query Execution (cURL Example)
-```bash
-curl -X POST \
-  -H "Authorization: Bearer dev-token" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is the refund policy?", "top_k": 20, "rerank_top_n": 5}' \
-  http://localhost:8000/api/v1/query
-```
+## Run locally
 
----
-
-## 🧪 Testing & Quality Assurance
+Start from the repository root. Python 3.12 is the container baseline.
 
 ```bash
-# Run pytest test suite (365 tests)
-python -m pytest tests
-
-# Run mypy static type checking
-python -m mypy app
+cd backend
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r requirements-dev.txt
+AI_PROVIDER=deterministic python -m uvicorn app.main:app --reload --host 127.0.0.1
 ```
 
----
+Open <http://127.0.0.1:8000/docs> for the API explorer. `GET /health` checks application liveness.
 
-## 📚 Reports & Architecture Docs
+In a second terminal:
 
-- [INGESTION_PIPELINE_REPORT.md](file:///c:/Users/ROHIT/Downloads/sentinelrag/docs/INGESTION_PIPELINE_REPORT.md)
-- [PROVIDER_MIGRATION_REPORT.md](file:///c:/Users/ROHIT/Downloads/sentinelrag/docs/PROVIDER_MIGRATION_REPORT.md)
-- [FINAL_RELEASE_AUDIT_REPORT.md](file:///c:/Users/ROHIT/Downloads/sentinelrag/docs/FINAL_RELEASE_AUDIT_REPORT.md)
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+See [`frontend/.env.example`](frontend/.env.example) for frontend configuration. Real AI providers require separate credentials; deterministic mode is intended for repeatable development, not evaluation of model quality.
+
+### Query the API
+
+```bash
+curl http://127.0.0.1:8000/api/v1/query \
+  -H 'Authorization: Bearer local-demo' \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"What is the refund policy?","top_k":20,"rerank_top_n":5}'
+```
+
+An empty in-memory corpus cannot answer questions about your documents. Upload a supported PDF, DOCX, TXT, or Markdown document through `/api/v1/documents/upload`, then poll `/api/v1/documents/{id}/status` before querying it.
+
+## Verification
+
+Run backend checks from `backend/`:
+
+```bash
+AI_PROVIDER=deterministic python -m pytest
+```
+
+`pytest.ini` excludes integration tests by default. Real-infrastructure tests require their backing services and an explicit `-m integration` selection. Run `npm run typecheck` and `npm run build` from `frontend/` to verify the interface. Test results should be reported for the exact commit and environment; historical reports are not a substitute for current checks.
+
+## Deployment boundaries
+
+This is an engineering prototype. Before exposing it to untrusted clients, address these current limitations:
+
+- **Authentication:** the authorization dependency accepts a nonempty header; it does not validate identity or grant tenant isolation. The example token is a development placeholder.
+- **Persistence:** the application factories currently return in-memory vector and metadata repositories. Process restarts lose this state. Starting PostgreSQL, Redis, and Qdrant in Compose does not automatically wire them into the application.
+- **Verification:** the default NLI verifier and reranker are deterministic substitutes. Their diagnostics are not calibrated confidence scores or a factuality guarantee.
+- **Operations:** CORS, upload/resource bounds, durable background processing, readiness checks, and provider failure handling need deployment-specific review.
+
+The root Compose stack supplies development infrastructure and optional observability. It is not a production deployment contract. See [engineering priorities](docs/ENGINEERING_PRIORITIES.md).
+
+## Design notes
+
+- [Retrieval domain design](docs/RETRIEVAL_DOMAIN_DESIGN.md)
+- [Ingestion pipeline](docs/INGESTION_PIPELINE_REPORT.md)
+- [Provider migration](docs/PROVIDER_MIGRATION_REPORT.md)
+- [Architecture enhancements](docs/ARCHITECTURE_ENHANCEMENTS.md)
+
+These notes include historical implementation reports; use the current source and tests to establish actual behavior.

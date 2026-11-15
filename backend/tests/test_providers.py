@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from app.core.settings.ai_provider import AISettings
 from app.providers.factory import AIProviderFactory
@@ -28,10 +28,12 @@ def test_factory_gemini():
     settings = AISettings(provider="gemini", gemini_api_key="test_key")
     factory = AIProviderFactory(settings)
 
-    embedder = factory.create_embedding_provider()
-    llm = factory.create_llm_provider()
+    with patch.object(factory, "_validate_gemini_model", side_effect=lambda key, model, method: model):
+        embedder = factory.create_embedding_provider()
+        llm = factory.create_llm_provider()
 
-    assert isinstance(embedder, GeminiEmbeddingProvider)
+    from app.providers.router.embedding_router import EmbeddingRouterProvider
+    assert isinstance(embedder, EmbeddingRouterProvider)
     assert isinstance(llm, GeminiLLMProvider)
 
 
@@ -39,7 +41,7 @@ def test_factory_gemini():
 async def test_deterministic_provider_execution():
     provider = DeterministicLLMProvider()
 
-    decision = Decision(action=DecisionAction.PROCEED, reasons=["All good"], confidence=0.95)
+    decision = Decision(action=DecisionAction.PROCEED, reasons=["All good"], confidence_score=0.95)
     answer = await provider.generate(decision=decision, query="test")
     assert isinstance(answer, str)
     assert "Based on verified evidence" in answer
@@ -80,7 +82,7 @@ def test_gemini_model_name_normalization():
 
     provider_embed = GeminiEmbeddingProvider(api_key="test_key", model="models/text-embedding-004")
     assert provider_embed.model == "text-embedding-004"
-    assert provider_embed._endpoint == "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
+    assert provider_embed._single_endpoint == "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
 
 
 def test_factory_gemini_invalid_model_prevalidation():
@@ -99,9 +101,9 @@ def test_factory_gemini_invalid_model_prevalidation():
 
 @pytest.mark.asyncio
 async def test_gemini_batch_embed_contents_success():
-    provider = GeminiEmbeddingProvider(api_key="test_key")
+    provider = GeminiEmbeddingProvider(api_key="test_key", dimensions=3)
 
-    mock_resp = AsyncMock()
+    mock_resp = Mock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
         "embeddings": [
@@ -127,7 +129,7 @@ def test_gemini_2_5_flash_direct_support():
 async def test_gemini_prompt_caching_and_metrics():
     provider = GeminiLLMProvider(api_key="test_key")
 
-    mock_resp = AsyncMock()
+    mock_resp = Mock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
         "candidates": [

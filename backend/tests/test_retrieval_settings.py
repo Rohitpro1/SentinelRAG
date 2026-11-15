@@ -11,7 +11,7 @@ def test_defaults_match_frozen_design_numbers():
     s = RetrievalSettings()
     assert s.default_top_k == 20
     assert s.default_rerank_top_n == 5
-    assert s.embedding_timeout_ms == 300
+    assert s.embedding_timeout_ms == 3000
     assert s.vector_search_timeout_ms == 400
     assert s.rerank_timeout_ms == 250
     assert s.total_soft_budget_ms == 1000

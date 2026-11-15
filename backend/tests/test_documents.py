@@ -34,9 +34,24 @@ async def test_markdown_parser():
 @pytest.mark.asyncio
 async def test_pdf_parser_valid():
     parser = PDFDocumentParser()
-    content = b"%PDF-1.4 (fake pdf text block (Sample PDF Document Content) ET)"
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+    font = DictionaryObject({NameObject("/Type"): NameObject("/Font"),
+                             NameObject("/Subtype"): NameObject("/Type1"),
+                             NameObject("/BaseFont"): NameObject("/Helvetica")})
+    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"):
+        DictionaryObject({NameObject("/F1"): writer._add_object(font)})})
+    stream = DecodedStreamObject()
+    stream.set_data(b"BT /F1 12 Tf 20 250 Td (Sample PDF Document Content) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    content = buffer.getvalue()
     parsed = await parser.parse(content, "sample.pdf")
     assert parsed.metadata["format"] == "pdf"
+    assert "Sample PDF Document Content" in parsed.text
 
 
 @pytest.mark.asyncio

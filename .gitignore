@@ -1,0 +1,24 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+# Python environments and generated artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# JavaScript build artifacts
+node_modules/
+dist/
+*.tsbuildinfo
+# Local editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+# Runtime data
+*.log
